@@ -1,7 +1,7 @@
 use anyhow::{ensure, Result};
 use av_metrics::video::{
     decode::{Decoder, Rational, VideoDetails},
-    ChromaSampling,
+    ChromaSubsampling,
 };
 use std::{
     mem::{size_of, transmute},
@@ -146,7 +146,7 @@ impl Decoder for VapoursynthDecoder {
                         // SAFETY: We know that `T` is `u8` here.
                         out_row[..in_row.len()].copy_from_slice(unsafe { transmute(in_row) });
                     }
-                    if details.chroma_sampling != ChromaSampling::Cs400 {
+                    if details.chroma_sampling != ChromaSubsampling::Monochrome {
                         for (out_row, in_row) in f.planes[1].rows_iter_mut().zip(
                             (0..(details.height
                                 >> details.chroma_sampling.get_decimation().unwrap().1))
@@ -156,7 +156,7 @@ impl Decoder for VapoursynthDecoder {
                             out_row[..in_row.len()].copy_from_slice(unsafe { transmute(in_row) });
                         }
                     }
-                    if details.chroma_sampling != ChromaSampling::Cs400 {
+                    if details.chroma_sampling != ChromaSubsampling::Monochrome {
                         for (out_row, in_row) in f.planes[2].rows_iter_mut().zip(
                             (0..(details.height
                                 >> details.chroma_sampling.get_decimation().unwrap().1))
@@ -175,7 +175,7 @@ impl Decoder for VapoursynthDecoder {
                         // SAFETY: We know that `T` is `u16` here.
                         out_row[..in_row.len()].copy_from_slice(unsafe { transmute(in_row) });
                     }
-                    if details.chroma_sampling != ChromaSampling::Cs400 {
+                    if details.chroma_sampling != ChromaSubsampling::Monochrome {
                         for (out_row, in_row) in f.planes[1].rows_iter_mut().zip(
                             (0..(details.height
                                 >> details.chroma_sampling.get_decimation().unwrap().1))
@@ -185,7 +185,7 @@ impl Decoder for VapoursynthDecoder {
                             out_row[..in_row.len()].copy_from_slice(unsafe { transmute(in_row) });
                         }
                     }
-                    if details.chroma_sampling != ChromaSampling::Cs400 {
+                    if details.chroma_sampling != ChromaSubsampling::Monochrome {
                         for (out_row, in_row) in f.planes[2].rows_iter_mut().zip(
                             (0..(details.height
                                 >> details.chroma_sampling.get_decimation().unwrap().1))
@@ -217,10 +217,10 @@ impl Decoder for VapoursynthDecoder {
             format.color_family(),
             format.sub_sampling_w() + format.sub_sampling_h(),
         ) {
-            (ColorFamily::Gray, _) => ChromaSampling::Cs400,
-            (_, 0) => ChromaSampling::Cs444,
-            (_, 1) => ChromaSampling::Cs422,
-            _ => ChromaSampling::Cs420,
+            (ColorFamily::Gray, _) => ChromaSubsampling::Monochrome,
+            (_, 0) => ChromaSubsampling::Yuv444,
+            (_, 1) => ChromaSubsampling::Yuv422,
+            _ => ChromaSubsampling::Yuv420,
         };
         VideoDetails {
             width: res.width,

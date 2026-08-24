@@ -9,7 +9,6 @@
 //! See https://en.wikipedia.org/wiki/Structural_similarity for more details.
 
 use crate::video::decode::Decoder;
-use crate::video::pixel::CastFromPrimitive;
 use crate::video::pixel::Pixel;
 use crate::video::ChromaWeight;
 use crate::video::{PlanarMetrics, VideoMetric};
@@ -18,9 +17,9 @@ use std::cmp;
 use std::error::Error;
 use std::f64::consts::{E, PI};
 use std::mem::size_of;
+use v_frame::chroma::ChromaSubsampling;
 use v_frame::frame::Frame;
 use v_frame::plane::Plane;
-use v_frame::prelude::ChromaSampling;
 
 use super::FrameCompare;
 
@@ -47,7 +46,7 @@ pub fn calculate_frame_ssim<T: Pixel>(
     frame1: &Frame<T>,
     frame2: &Frame<T>,
     bit_depth: usize,
-    chroma_sampling: ChromaSampling,
+    chroma_sampling: ChromaSubsampling,
 ) -> Result<PlanarMetrics, Box<dyn Error>> {
     let processor = Ssim::default();
     let result = processor.process_frame(frame1, frame2, bit_depth, chroma_sampling)?;
@@ -79,7 +78,7 @@ impl VideoMetric for Ssim {
         frame1: &Frame<T>,
         frame2: &Frame<T>,
         bit_depth: usize,
-        _chroma_sampling: ChromaSampling,
+        _chroma_sampling: ChromaSubsampling,
     ) -> Result<Self::FrameResult, Box<dyn Error>> {
         if (size_of::<T>() == 1 && bit_depth > 8) || (size_of::<T>() == 2 && bit_depth <= 8) {
             return Err(Box::new(MetricsError::InputMismatch {
@@ -100,13 +99,13 @@ impl VideoMetric for Ssim {
         rayon::scope(|s| {
             s.spawn(|_| {
                 let y_kernel = build_gaussian_kernel(
-                    frame1.planes[0].cfg.height as f64 * 1.5 / 256.0,
-                    cmp::min(frame1.planes[0].cfg.width, frame1.planes[0].cfg.height),
+                    frame1.y_plane.height() as f64 * 1.5 / 256.0,
+                    cmp::min(frame1.y_plane.width(), frame1.y_plane.height()),
                     KERNEL_WEIGHT,
                 );
                 y = calculate_plane_ssim(
-                    &frame1.planes[0],
-                    &frame2.planes[0],
+                    &frame1.y_plane,
+                    &frame2.y_plane,
                     sample_max,
                     &y_kernel,
                     &y_kernel,
@@ -114,33 +113,29 @@ impl VideoMetric for Ssim {
             });
 
             s.spawn(|_| {
-                let u_kernel = build_gaussian_kernel(
-                    frame1.planes[1].cfg.height as f64 * 1.5 / 256.0,
-                    cmp::min(frame1.planes[1].cfg.width, frame1.planes[1].cfg.height),
-                    KERNEL_WEIGHT,
-                );
-                u = calculate_plane_ssim(
-                    &frame1.planes[1],
-                    &frame2.planes[1],
-                    sample_max,
-                    &u_kernel,
-                    &u_kernel,
-                )
+                if let Some(plane1) = &frame1.u_plane {
+                    if let Some(plane2) = &frame2.u_plane {
+                        let u_kernel = build_gaussian_kernel(
+                            plane1.height() as f64 * 1.5 / 256.0,
+                            cmp::min(plane1.width(), plane1.height()),
+                            KERNEL_WEIGHT,
+                        );
+                        u = calculate_plane_ssim(&plane1, &plane2, sample_max, &u_kernel, &u_kernel)
+                    }
+                }
             });
 
             s.spawn(|_| {
-                let v_kernel = build_gaussian_kernel(
-                    frame1.planes[2].cfg.height as f64 * 1.5 / 256.0,
-                    cmp::min(frame1.planes[2].cfg.width, frame1.planes[2].cfg.height),
-                    KERNEL_WEIGHT,
-                );
-                v = calculate_plane_ssim(
-                    &frame1.planes[2],
-                    &frame2.planes[2],
-                    sample_max,
-                    &v_kernel,
-                    &v_kernel,
-                )
+                if let Some(plane1) = &frame1.v_plane {
+                    if let Some(plane2) = &frame2.v_plane {
+                        let v_kernel = build_gaussian_kernel(
+                            plane1.height() as f64 * 1.5 / 256.0,
+                            cmp::min(plane1.width(), plane1.height()),
+                            KERNEL_WEIGHT,
+                        );
+                        v = calculate_plane_ssim(&plane1, &plane2, sample_max, &v_kernel, &v_kernel)
+                    }
+                }
             });
         });
 
@@ -204,7 +199,7 @@ pub fn calculate_frame_msssim<T: Pixel>(
     frame1: &Frame<T>,
     frame2: &Frame<T>,
     bit_depth: usize,
-    chroma_sampling: ChromaSampling,
+    chroma_sampling: ChromaSubsampling,
 ) -> Result<PlanarMetrics, Box<dyn Error>> {
     let processor = MsSsim::default();
     let result = processor.process_frame(frame1, frame2, bit_depth, chroma_sampling)?;
@@ -236,7 +231,7 @@ impl VideoMetric for MsSsim {
         frame1: &Frame<T>,
         frame2: &Frame<T>,
         bit_depth: usize,
-        _chroma_sampling: ChromaSampling,
+        _chroma_sampling: ChromaSubsampling,
     ) -> Result<Self::FrameResult, Box<dyn Error>> {
         if (size_of::<T>() == 1 && bit_depth > 8) || (size_of::<T>() == 2 && bit_depth <= 8) {
             return Err(Box::new(MetricsError::InputMismatch {
@@ -251,14 +246,20 @@ impl VideoMetric for MsSsim {
         let mut v = 0.0;
 
         rayon::scope(|s| {
+            s.spawn(|_| y = calculate_plane_msssim(&frame1.y_plane, &frame2.y_plane, bit_depth));
             s.spawn(|_| {
-                y = calculate_plane_msssim(&frame1.planes[0], &frame2.planes[0], bit_depth)
+                if let Some(plane1) = &frame1.u_plane {
+                    if let Some(plane2) = &frame2.u_plane {
+                        u = calculate_plane_msssim(&plane1, &plane2, bit_depth)
+                    }
+                }
             });
             s.spawn(|_| {
-                u = calculate_plane_msssim(&frame1.planes[1], &frame2.planes[1], bit_depth)
-            });
-            s.spawn(|_| {
-                v = calculate_plane_msssim(&frame1.planes[2], &frame2.planes[2], bit_depth)
+                if let Some(plane1) = &frame1.v_plane {
+                    if let Some(plane2) = &frame2.v_plane {
+                        v = calculate_plane_msssim(&plane1, &plane2, bit_depth)
+                    }
+                }
             });
         });
 
@@ -316,8 +317,8 @@ fn calculate_plane_ssim<T: Pixel>(
     calculate_plane_ssim_internal(
         &vec1,
         &vec2,
-        plane1.cfg.width,
-        plane1.cfg.height,
+        plane1.width(),
+        plane1.height(),
         sample_max,
         vert_kernel,
         horiz_kernel,
@@ -412,8 +413,8 @@ fn calculate_plane_msssim<T: Pixel>(plane1: &Plane<T>, plane2: &Plane<T>, bit_de
     let mut sample_max = (1 << bit_depth) - 1;
     let mut ssim = [0.0; 5];
     let mut cs = [0.0; 5];
-    let mut width = plane1.cfg.width;
-    let mut height = plane1.cfg.height;
+    let mut width = plane1.width();
+    let mut height = plane1.height();
     let mut plane1 = plane_to_vec(plane1);
     let mut plane2 = plane_to_vec(plane2);
 
@@ -472,7 +473,10 @@ fn build_gaussian_kernel(sigma: f64, max_len: usize, kernel_weight: usize) -> Ve
 }
 
 fn plane_to_vec<T: Pixel>(input: &Plane<T>) -> Vec<u32> {
-    input.data.iter().map(|pix| u32::cast_from(*pix)).collect()
+    input
+        .pixels()
+        .map(|pix| u32::from(Into::<u16>::into(pix)))
+        .collect()
 }
 
 // This acts differently from downscaling a plane, and is what

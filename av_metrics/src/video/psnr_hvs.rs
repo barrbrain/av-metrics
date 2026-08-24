@@ -7,16 +7,15 @@
 //! See https://en.wikipedia.org/wiki/Peak_signal-to-noise_ratio for more details.
 
 use crate::video::decode::Decoder;
-use crate::video::pixel::CastFromPrimitive;
 use crate::video::pixel::Pixel;
 use crate::video::ChromaWeight;
 use crate::video::{PlanarMetrics, VideoMetric};
 use crate::MetricsError;
 use std::error::Error;
 use std::mem::size_of;
+use v_frame::chroma::ChromaSubsampling;
 use v_frame::frame::Frame;
 use v_frame::plane::Plane;
-use v_frame::prelude::ChromaSampling;
 
 use super::FrameCompare;
 
@@ -43,7 +42,7 @@ pub fn calculate_frame_psnr_hvs<T: Pixel>(
     frame1: &Frame<T>,
     frame2: &Frame<T>,
     bit_depth: usize,
-    chroma_sampling: ChromaSampling,
+    chroma_sampling: ChromaSubsampling,
 ) -> Result<PlanarMetrics, Box<dyn Error>> {
     let processor = PsnrHvs::default();
     let result = processor.process_frame(frame1, frame2, bit_depth, chroma_sampling)?;
@@ -75,7 +74,7 @@ impl VideoMetric for PsnrHvs {
         frame1: &Frame<T>,
         frame2: &Frame<T>,
         bit_depth: usize,
-        _chroma_sampling: ChromaSampling,
+        _chroma_sampling: ChromaSubsampling,
     ) -> Result<Self::FrameResult, Box<dyn Error>> {
         if (size_of::<T>() == 1 && bit_depth > 8) || (size_of::<T>() == 2 && bit_depth <= 8) {
             return Err(Box::new(MetricsError::InputMismatch {
@@ -91,13 +90,21 @@ impl VideoMetric for PsnrHvs {
 
         rayon::scope(|s| {
             s.spawn(|_| {
-                y = calculate_plane_psnr_hvs(&frame1.planes[0], &frame2.planes[0], 0, bit_depth)
+                y = calculate_plane_psnr_hvs(&frame1.y_plane, &frame2.y_plane, 0, bit_depth)
             });
             s.spawn(|_| {
-                u = calculate_plane_psnr_hvs(&frame1.planes[1], &frame2.planes[1], 1, bit_depth)
+                if let Some(plane1) = &frame1.u_plane {
+                    if let Some(plane2) = &frame2.u_plane {
+                        u = calculate_plane_psnr_hvs(&plane1, &plane2, 1, bit_depth)
+                    }
+                }
             });
             s.spawn(|_| {
-                v = calculate_plane_psnr_hvs(&frame1.planes[2], &frame2.planes[2], 2, bit_depth)
+                if let Some(plane1) = &frame1.v_plane {
+                    if let Some(plane2) = &frame2.v_plane {
+                        v = calculate_plane_psnr_hvs(&plane1, &plane2, 2, bit_depth)
+                    }
+                }
             });
         });
 
@@ -209,15 +216,12 @@ fn calculate_plane_psnr_hvs<T: Pixel>(
         }
     }
 
-    let height = plane1.cfg.height;
-    let width = plane1.cfg.width;
-    let stride = plane1.cfg.stride;
+    let height = plane1.height();
+    let width = plane1.width();
     let mut p1 = [0i16; 8 * 8];
     let mut p2 = [0i16; 8 * 8];
     let mut dct_p1 = [0i32; 8 * 8];
     let mut dct_p2 = [0i32; 8 * 8];
-    assert!(plane1.data.len() >= stride * height);
-    assert!(plane2.data.len() >= stride * height);
     for y in (0..(height - STEP)).step_by(STEP) {
         for x in (0..(width - STEP)).step_by(STEP) {
             let mut p1_means = [0.0; 4];
@@ -233,8 +237,8 @@ fn calculate_plane_psnr_hvs<T: Pixel>(
 
             for i in 0..8 {
                 for j in 0..8 {
-                    p1[i * 8 + j] = i16::cast_from(plane1.data[(y + i) * stride + x + j]);
-                    p2[i * 8 + j] = i16::cast_from(plane2.data[(y + i) * stride + x + j]);
+                    p1[i * 8 + j] = Into::<u16>::into(plane1.row(y + i).unwrap()[x + j]) as i16;
+                    p2[i * 8 + j] = Into::<u16>::into(plane2.row(y + i).unwrap()[x + j]) as i16;
 
                     let sub = ((i & 12) >> 2) + ((j & 12) >> 1);
                     p1_gmean += p1[i * 8 + j] as f64;

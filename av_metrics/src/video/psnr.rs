@@ -5,15 +5,14 @@
 //! See https://en.wikipedia.org/wiki/Peak_signal-to-noise_ratio for more details.
 
 use crate::video::decode::Decoder;
-use crate::video::pixel::CastFromPrimitive;
 use crate::video::pixel::Pixel;
 use crate::video::{PlanarMetrics, VideoMetric};
 use crate::MetricsError;
 use std::error::Error;
 use std::mem::size_of;
+use v_frame::chroma::ChromaSubsampling;
 use v_frame::frame::Frame;
 use v_frame::plane::Plane;
-use v_frame::prelude::ChromaSampling;
 
 use super::FrameCompare;
 
@@ -59,7 +58,7 @@ pub fn calculate_frame_psnr<T: Pixel>(
     frame1: &Frame<T>,
     frame2: &Frame<T>,
     bit_depth: usize,
-    chroma_sampling: ChromaSampling,
+    chroma_sampling: ChromaSubsampling,
 ) -> Result<PlanarMetrics, Box<dyn Error>> {
     let metrics = Psnr.process_frame(frame1, frame2, bit_depth, chroma_sampling)?;
     Ok(PlanarMetrics {
@@ -87,7 +86,7 @@ impl VideoMetric for Psnr {
         frame1: &Frame<T>,
         frame2: &Frame<T>,
         bit_depth: usize,
-        _chroma_sampling: ChromaSampling,
+        _chroma_sampling: ChromaSubsampling,
     ) -> Result<Self::FrameResult, Box<dyn Error>> {
         if (size_of::<T>() == 1 && bit_depth > 8) || (size_of::<T>() == 2 && bit_depth <= 8) {
             return Err(Box::new(MetricsError::InputMismatch {
@@ -103,13 +102,21 @@ impl VideoMetric for Psnr {
 
         rayon::scope(|s| {
             s.spawn(|_| {
-                y = calculate_plane_psnr_metrics(&frame1.planes[0], &frame2.planes[0], bit_depth)
+                y = calculate_plane_psnr_metrics(&frame1.y_plane, &frame2.y_plane, bit_depth)
             });
             s.spawn(|_| {
-                u = calculate_plane_psnr_metrics(&frame1.planes[1], &frame2.planes[1], bit_depth)
+                if let Some(plane1) = &frame1.u_plane {
+                    if let Some(plane2) = &frame2.u_plane {
+                        u = calculate_plane_psnr_metrics(&plane1, &plane2, bit_depth);
+                    }
+                }
             });
             s.spawn(|_| {
-                v = calculate_plane_psnr_metrics(&frame1.planes[2], &frame2.planes[2], bit_depth)
+                if let Some(plane1) = &frame1.v_plane {
+                    if let Some(plane2) = &frame2.v_plane {
+                        v = calculate_plane_psnr_metrics(&plane1, &plane2, bit_depth);
+                    }
+                }
             });
         });
 
@@ -170,7 +177,7 @@ fn calculate_plane_psnr_metrics<T: Pixel>(
     let max = (1 << bit_depth) - 1;
     PsnrMetrics {
         sq_err,
-        n_pixels: plane1.cfg.width * plane1.cfg.height,
+        n_pixels: plane1.width() * plane1.height(),
         sample_max: max,
     }
 }
@@ -187,10 +194,12 @@ fn calculate_psnr(metrics: PsnrMetrics) -> f64 {
 /// to the compressed version.
 fn calculate_plane_total_squared_error<T: Pixel>(plane1: &Plane<T>, plane2: &Plane<T>) -> f64 {
     plane1
-        .data
-        .iter()
-        .zip(plane2.data.iter())
-        .map(|(a, b)| (i32::cast_from(*a) - i32::cast_from(*b)).unsigned_abs() as u64)
+        .pixels()
+        .zip(plane2.pixels())
+        .map(|(a, b)| {
+            (i32::from(Into::<u16>::into(a)) - i32::from(Into::<u16>::into(b))).unsigned_abs()
+                as u64
+        })
         .map(|err| err * err)
         .sum::<u64>() as f64
 }
