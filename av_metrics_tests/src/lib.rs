@@ -500,6 +500,22 @@ mod tests {
     }
 
     #[test]
+    fn ciede2000_gray8_nosimd() {
+        let mut dec1 = get_decoder(format!(
+            "{}/../testfiles/gray8_input.y4m",
+            env!("CARGO_MANIFEST_DIR")
+        ))
+        .unwrap();
+        let mut dec2 = get_decoder(format!(
+            "{}/../testfiles/gray8_output.y4m",
+            env!("CARGO_MANIFEST_DIR")
+        ))
+        .unwrap();
+        let result = calculate_video_ciede_nosimd(&mut dec1, &mut dec2, None, |_| ()).unwrap();
+        assert_metric_eq(39.0916, result);
+    }
+
+    #[test]
     fn ciede2000_yuv420p8_nosimd() {
         let mut dec1 = get_decoder(format!(
             "{}/../testfiles/yuv420p8_input.y4m",
