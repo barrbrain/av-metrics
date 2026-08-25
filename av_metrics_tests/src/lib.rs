@@ -310,6 +310,25 @@ mod tests {
     }
 
     #[test]
+    fn ssim_gray8() {
+        let mut dec1 = get_decoder(format!(
+            "{}/../testfiles/gray8_input.y4m",
+            env!("CARGO_MANIFEST_DIR")
+        ))
+        .unwrap();
+        let mut dec2 = get_decoder(format!(
+            "{}/../testfiles/gray8_output.y4m",
+            env!("CARGO_MANIFEST_DIR")
+        ))
+        .unwrap();
+        let result = calculate_video_ssim(&mut dec1, &mut dec2, None, |_| ()).unwrap();
+        assert_metric_eq(12.7288, result.y);
+        assert_metric_eq(f64::INFINITY, result.u);
+        assert_metric_eq(f64::INFINITY, result.v);
+        assert_metric_eq(12.7288, result.avg);
+    }
+
+    #[test]
     fn ssim_yuv420p8() {
         let mut dec1 = get_decoder(format!(
             "{}/../testfiles/yuv420p8_input.y4m",
