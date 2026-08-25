@@ -249,8 +249,8 @@ impl VideoMetric for MsSsim {
         frame1.can_compare(frame2)?;
 
         let mut y = 0.0;
-        let mut u = 0.0;
-        let mut v = 0.0;
+        let mut u = 1.0;
+        let mut v = 1.0;
 
         rayon::scope(|s| {
             s.spawn(|_| {
