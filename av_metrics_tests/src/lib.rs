@@ -25,6 +25,25 @@ mod tests {
     }
 
     #[test]
+    fn psnr_gray8() {
+        let mut dec1 = get_decoder(format!(
+            "{}/../testfiles/gray8_input.y4m",
+            env!("CARGO_MANIFEST_DIR")
+        ))
+        .unwrap();
+        let mut dec2 = get_decoder(format!(
+            "{}/../testfiles/gray8_output.y4m",
+            env!("CARGO_MANIFEST_DIR")
+        ))
+        .unwrap();
+        let result = calculate_video_psnr(&mut dec1, &mut dec2, None, |_| ()).unwrap();
+        assert_metric_eq(31.1927, result.y);
+        assert_metric_eq(100.0, result.u);
+        assert_metric_eq(100.0, result.v);
+        assert_metric_eq(31.1927, result.avg);
+    }
+
+    #[test]
     fn psnr_yuv420p8() {
         let mut dec1 = get_decoder(format!(
             "{}/../testfiles/yuv420p8_input.y4m",
@@ -98,6 +117,25 @@ mod tests {
         assert_metric_eq(36.4922, result.u);
         assert_metric_eq(39.8558, result.v);
         assert_metric_eq(33.7071, result.avg);
+    }
+
+    #[test]
+    fn apsnr_gray8() {
+        let mut dec1 = get_decoder(format!(
+            "{}/../testfiles/gray8_input.y4m",
+            env!("CARGO_MANIFEST_DIR")
+        ))
+        .unwrap();
+        let mut dec2 = get_decoder(format!(
+            "{}/../testfiles/gray8_output.y4m",
+            env!("CARGO_MANIFEST_DIR")
+        ))
+        .unwrap();
+        let result = calculate_video_apsnr(&mut dec1, &mut dec2, None, |_| ()).unwrap();
+        assert_metric_eq(31.2095, result.y);
+        assert_metric_eq(100.0, result.u);
+        assert_metric_eq(100.0, result.v);
+        assert_metric_eq(31.2095, result.avg);
     }
 
     #[test]
