@@ -215,6 +215,25 @@ mod tests {
     }
 
     #[test]
+    fn psnr_hvs_gray8() {
+        let mut dec1 = get_decoder(format!(
+            "{}/../testfiles/gray8_input.y4m",
+            env!("CARGO_MANIFEST_DIR")
+        ))
+        .unwrap();
+        let mut dec2 = get_decoder(format!(
+            "{}/../testfiles/gray8_output.y4m",
+            env!("CARGO_MANIFEST_DIR")
+        ))
+        .unwrap();
+        let result = calculate_video_psnr_hvs(&mut dec1, &mut dec2, None, |_| ()).unwrap();
+        assert_metric_eq(33.0032, result.y);
+        assert_metric_eq(f64::INFINITY, result.u);
+        assert_metric_eq(f64::INFINITY, result.v);
+        assert_metric_eq(33.0032, result.avg);
+    }
+
+    #[test]
     fn psnr_hvs_yuv420p8() {
         let mut dec1 = get_decoder(format!(
             "{}/../testfiles/yuv420p8_input.y4m",
@@ -572,7 +591,7 @@ mod tests {
 
     fn assert_metric_eq(expected: f64, value: f64) {
         assert!(
-            (expected - value).abs() < 0.01,
+            (expected - value).abs() < 0.01 || value == expected,
             "Expected {}, got {}",
             expected,
             value
