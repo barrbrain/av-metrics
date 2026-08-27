@@ -174,7 +174,7 @@ pub fn get_decoder<P: AsRef<Path>>(input: P) -> Result<Y4MDecoder<BufReader<File
 
 #[cfg(feature = "ffmpeg")]
 pub fn get_decoder<P: AsRef<Path>>(input: P) -> Result<FfmpegDecoder, String> {
-    FfmpegDecoder::new(input)
+    FfmpegDecoder::new(input.as_ref())
 }
 
 #[derive(Debug, Clone, Serialize, Default)]
